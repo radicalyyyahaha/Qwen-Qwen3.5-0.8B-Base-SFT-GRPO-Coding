@@ -12,5 +12,13 @@ pyyaml>=6.0
 # Fast generation for eval (optional but recommended). Use --backend hf to skip.
 vllm>=0.7.0
 
+# SFT / GRPO training
+trl>=0.12.0
+peft>=0.13.0
+
+# Optional: faster + lower-memory attention for training. If it won't build on
+# Blackwell, the train script auto-falls back to PyTorch SDPA.
+# flash-attn>=2.7.0
+
 # Code benchmarks: HumanEval+ / MBPP+
 evalplus>=0.3.1

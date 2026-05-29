@@ -1,0 +1,37 @@
+# LoRA SFT — fallback if full SFT is undesirable. Much lower memory.
+# NOTE: this saves an adapter; merge it into the base model before Phase 3 eval.
+model: Qwen/Qwen3.5-0.8B-Base
+train_file: data/sft/magicoder_chat.jsonl
+output_dir: outputs/qwen35_0_8b_code_sft_lora
+
+training_type: lora
+precision: bf16
+seq_len: 4096
+packing: true
+attn_implementation: flash_attention_2
+
+per_device_train_batch_size: 16
+gradient_accumulation_steps: 2
+gradient_checkpointing: true
+
+learning_rate: 2.0e-4          # LoRA wants a higher LR than full FT
+num_train_epochs: 3
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+optim: adamw_torch_fused
+tf32: true
+
+logging_steps: 10
+save_strategy: epoch
+save_total_limit: 2
+dataloader_num_workers: 4
+report_to: none
+seed: 42
+
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]

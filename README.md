@@ -12,7 +12,7 @@ single **RTX 5090 (32GB)**. Full design spec lives in [`code_rlvr_plan.md`](code
 ## Status
 
 - [x] **Phase 1 — Base evaluation** (HumanEval+ / MBPP+)
-- [ ] Phase 2 — Code SFT (`ise-uiuc/Magicoder-OSS-Instruct-75K`)
+- [x] **Phase 2 — Code SFT** (`ise-uiuc/Magicoder-OSS-Instruct-75K`)
 - [ ] Phase 3 — SFT evaluation
 - [ ] Phase 4 — GRPO / RLVR (`BAAI/TACO`, test-based reward)
 - [ ] Phase 5 — Final evaluation
@@ -22,10 +22,15 @@ single **RTX 5090 (32GB)**. Full design spec lives in [`code_rlvr_plan.md`](code
 ```
 configs/
   eval.yaml              # fixed eval config (keep identical across phases)
+  sft_full.yaml          # full SFT (primary, maxed for RTX 5090 32GB)
+  sft_lora.yaml          # LoRA SFT (fallback)
 scripts/
   eval_evalplus.py       # HumanEval+/MBPP+ harness (Phase 1/3/5)
+  prepare_sft_data.py    # Magicoder -> chat-format jsonl (Phase 2)
+  train_sft.py           # TRL SFTTrainer (Phase 2)
 src/
   utils.py               # shared helpers
+data/                    # prepared datasets (gitignored)
 requirements.txt
 code_rlvr_plan.md        # full plan / spec
 ```
@@ -88,6 +93,56 @@ Defaults come from [`configs/eval.yaml`](configs/eval.yaml); CLI flags override 
   download fails.
 - Do not change `configs/eval.yaml` between phases; a fair Base/SFT/GRPO
   comparison depends on an identical eval config.
+
+---
+
+## Phase 2 — Code SFT
+
+Teaches the base model to follow code instructions, using
+`ise-uiuc/Magicoder-OSS-Instruct-75K` converted to chat format. Built on TRL's
+`SFTTrainer`. Two configs: **full** fine-tuning (primary) and **LoRA** (fallback).
+
+**Tuning for the RTX 5090 (32GB).** A 0.8B model leaves plenty of VRAM, so the
+config pushes throughput: bf16, sequence **packing** to fill 4096-token windows,
+Flash-Attention-2 (auto-falls back to SDPA), fused AdamW, TF32, and an effective
+batch of 32 (`16 x 2`). If `nvidia-smi` shows spare memory mid-run, raise
+`per_device_train_batch_size`.
+
+**1. Prepare data:**
+
+```bash
+python scripts/prepare_sft_data.py --limit 20000 \
+  --output data/sft/magicoder_chat.jsonl
+```
+
+`--limit 20000` randomly samples 20k of the ~75k Magicoder examples (shuffled
+with `--seed`) for SFT; the plan suggests starting at 10k–20k. Use `--limit 0`
+to keep all ~75k. Larger = potentially better but slower.
+
+**2. Train (full SFT):**
+
+```bash
+python scripts/train_sft.py --config configs/sft_full.yaml
+```
+
+Output model: `outputs/qwen35_0_8b_code_sft/` (full model + tokenizer with chat
+template — ready for Phase 3 eval with `--mode chat`).
+
+**Debug run** (checks the whole pipeline in a couple of minutes):
+
+```bash
+python scripts/train_sft.py --config configs/sft_full.yaml --limit 100 --max-steps 5
+```
+
+**LoRA fallback:** `--config configs/sft_lora.yaml`. This saves an adapter to
+`outputs/qwen35_0_8b_code_sft_lora/`; merge it into the base model before running
+Phase 3 eval.
+
+**Notes:**
+
+- `--limit` controls how many SFT samples are used (plan suggests 10k–20k).
+- The same eval script scores this checkpoint in Phase 3 — just point `--model`
+  at the output dir and use `--mode chat`.
 
 ---
 

@@ -1,0 +1,34 @@
+# Full SFT — primary config, tuned to push a single RTX 5090 (32GB).
+# A 0.8B model fits full fine-tuning here with lots of room, so we max batch.
+model: Qwen/Qwen3.5-0.8B-Base
+train_file: data/sft/magicoder_chat.jsonl
+output_dir: outputs/qwen35_0_8b_code_sft
+
+training_type: full           # full | lora
+precision: bf16
+seq_len: 4096
+packing: true                 # pack short samples to fill 4096 -> high GPU util
+attn_implementation: flash_attention_2   # auto-falls back to sdpa if unavailable
+
+# Throughput. Effective batch = 16 * 2 = 32 tokens-sequences of 4096.
+# If `nvidia-smi` shows spare VRAM mid-run, raise per_device_train_batch_size.
+per_device_train_batch_size: 16
+gradient_accumulation_steps: 2
+gradient_checkpointing: true
+
+learning_rate: 2.0e-5
+num_train_epochs: 3
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+
+optim: adamw_torch_fused
+tf32: true
+
+logging_steps: 10
+save_strategy: epoch
+save_total_limit: 2
+dataloader_num_workers: 4
+report_to: none
+seed: 42
