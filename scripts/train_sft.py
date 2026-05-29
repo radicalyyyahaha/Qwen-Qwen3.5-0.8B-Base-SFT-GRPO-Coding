@@ -166,33 +166,45 @@ def discover_lora_targets(model, scope):
 
 
 def build_training_args(cfg, output_dir):
+    import inspect
+
     from transformers import TrainingArguments
 
-    return TrainingArguments(
-        output_dir=output_dir,
-        per_device_train_batch_size=cfg["per_device_train_batch_size"],
-        gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
-        learning_rate=float(cfg["learning_rate"]),
-        num_train_epochs=cfg.get("num_train_epochs", 3),
-        lr_scheduler_type=cfg.get("lr_scheduler_type", "cosine"),
-        warmup_ratio=cfg.get("warmup_ratio", 0.03),
-        weight_decay=cfg.get("weight_decay", 0.0),
-        max_grad_norm=cfg.get("max_grad_norm", 1.0),
-        bf16=cfg.get("precision", "bf16") == "bf16",
-        tf32=cfg.get("tf32", True),
-        gradient_checkpointing=cfg.get("gradient_checkpointing", True),
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-        optim=cfg.get("optim", "adamw_torch_fused"),
-        logging_steps=cfg.get("logging_steps", 10),
-        save_strategy=cfg.get("save_strategy", "epoch"),
-        save_total_limit=cfg.get("save_total_limit", 2),
-        dataloader_num_workers=cfg.get("dataloader_num_workers", 4),
-        group_by_length=cfg.get("group_by_length", True),
-        length_column_name="length",
-        remove_unused_columns=False,
-        report_to=cfg.get("report_to", "none"),
-        seed=cfg.get("seed", 42),
-    )
+    kwargs = {
+        "output_dir": output_dir,
+        "per_device_train_batch_size": cfg["per_device_train_batch_size"],
+        "gradient_accumulation_steps": cfg["gradient_accumulation_steps"],
+        "learning_rate": float(cfg["learning_rate"]),
+        "num_train_epochs": cfg.get("num_train_epochs", 3),
+        "lr_scheduler_type": cfg.get("lr_scheduler_type", "cosine"),
+        "warmup_ratio": cfg.get("warmup_ratio", 0.03),
+        "weight_decay": cfg.get("weight_decay", 0.0),
+        "max_grad_norm": cfg.get("max_grad_norm", 1.0),
+        "bf16": cfg.get("precision", "bf16") == "bf16",
+        "tf32": cfg.get("tf32", True),
+        "gradient_checkpointing": cfg.get("gradient_checkpointing", True),
+        "gradient_checkpointing_kwargs": {"use_reentrant": False},
+        "optim": cfg.get("optim", "adamw_torch_fused"),
+        "logging_steps": cfg.get("logging_steps", 10),
+        "save_strategy": cfg.get("save_strategy", "epoch"),
+        "save_total_limit": cfg.get("save_total_limit", 2),
+        "dataloader_num_workers": cfg.get("dataloader_num_workers", 4),
+        "group_by_length": cfg.get("group_by_length", True),
+        "length_column_name": "length",
+        "remove_unused_columns": False,
+        "report_to": cfg.get("report_to", "none"),
+        "seed": cfg.get("seed", 42),
+    }
+    params = inspect.signature(TrainingArguments.__init__).parameters
+    if not any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        unsupported = sorted(set(kwargs) - set(params))
+        if unsupported:
+            print(
+                "[warn] TrainingArguments does not support "
+                f"{unsupported}; ignoring them"
+            )
+            kwargs = {k: v for k, v in kwargs.items() if k in params}
+    return TrainingArguments(**kwargs)
 
 
 def parse_args():

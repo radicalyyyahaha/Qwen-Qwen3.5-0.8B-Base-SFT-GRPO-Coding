@@ -153,7 +153,10 @@ configs: **full** fine-tuning (primary) and **LoRA** (fallback).
 and the MTP head (`mtp.*`), and fine-tunes the text decoder only. Data is
 tokenized with the chat template and **completion-only loss** (`mask_prompt:
 true` — the user/prompt tokens are set to `-100`, so loss is computed over the
-assistant response). **Packing is disabled** (DeltaNet recurrent state).
+assistant response). The script renders the chat template to text first, then
+tokenizes that text into plain `list[int]` token IDs; this avoids Hugging Face
+Datasets trying to write tokenizer-internal `Encoding` objects into Arrow.
+**Packing is disabled** (DeltaNet recurrent state).
 
 **Tuning for the RTX 5090 (32GB).** A 0.8B model leaves plenty of VRAM: bf16,
 Flash-Attention-2 on the full-attention layers (auto-falls back to SDPA), fused
@@ -198,6 +201,15 @@ model before running Phase 3 eval.
 **Notes:**
 
 - `--limit` controls how many SFT samples are used (plan suggests 10k–20k).
+- If tokenization fails with `OverflowError: There was an overflow with type
+  <class 'list'>` plus `Could not convert Encoding(...)`, the real issue is
+  usually not a 2GB batch: it means a tokenizer `Encoding` object leaked into
+  the dataset cache. `train_sft.py` avoids this by using the two-step
+  render-then-tokenize path described above.
+- Some older or vendor-patched `transformers` builds may not accept every
+  `TrainingArguments` keyword used here (for example `group_by_length`). The
+  script filters unsupported keywords at runtime and prints a warning; training
+  can continue, but the skipped option's optimization is disabled.
 - The same eval script scores this checkpoint in Phase 3 — just point `--model`
   at the output dir and use `--mode chat`.
 
