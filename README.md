@@ -27,7 +27,7 @@ configs/
 scripts/
   eval_evalplus.py       # HumanEval+/MBPP+ harness (Phase 1/3/5)
   prepare_sft_data.py    # Magicoder -> chat-format jsonl (Phase 2)
-  train_sft.py           # TRL SFTTrainer (Phase 2)
+  train_sft.py           # HF Trainer code SFT (Phase 2)
 src/
   utils.py               # shared helpers
 data/                    # prepared datasets (gitignored)
@@ -44,6 +44,12 @@ pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements.txt
 ```
 
+Qwen3.5 requires **`transformers >= 4.57`** (the `qwen3_5` architecture). For full
+DeltaNet speed, also install the optional kernels (commented in
+`requirements.txt`): `causal-conv1d` and `flash-linear-attention` (imports as
+`fla`). Without them the model still trains/evaluates via a slower pure-PyTorch
+path.
+
 If vLLM is hard to install on this GPU, every script supports `--backend hf`
 (plain `transformers`) as a fallback.
 
@@ -57,6 +63,30 @@ If vLLM is hard to install on this GPU, every script supports `--backend hf`
   2. If that also fails, run with `--backend hf` to unblock immediately.
   3. For a permanent fix, upgrade to a Blackwell-ready vLLM + FlashInfer built
      against CUDA 12.8.
+
+---
+
+## Model architecture (read before changing model code)
+
+`Qwen/Qwen3.5-0.8B-Base` is **not** a plain dense LLM — it is a natively
+multimodal hybrid checkpoint, and the training/eval code is written around that:
+
+- **Class:** `architectures = ["Qwen3_5ForConditionalGeneration"]`,
+  `model_type = qwen3_5`. Load it with `AutoModelForImageTextToText`, *not*
+  `AutoModelForCausalLM` (the shared helper `src.utils.load_lm` does this
+  automatically and falls back to causal-LM loading for dense models).
+- **Weights:** text decoder under `model.language_model.*`, vision tower under
+  `model.visual.*`, a multi-token-prediction head under `mtp.*`. Embeddings are
+  **tied** (no separate `lm_head` weight). Code SFT trains the text decoder only
+  and freezes `visual` + `mtp`.
+- **Hybrid attention:** 24 decoder layers in a 3:1 pattern — three Gated DeltaNet
+  `linear_attention` layers per one `full_attention` layer
+  (`full_attention_interval: 4`). `attn_implementation` (flash-attn/sdpa) applies
+  to the full-attention layers; the DeltaNet layers use `causal-conv1d` + `fla`
+  kernels when installed.
+- **No sequence packing.** DeltaNet layers keep a recurrent state across the
+  sequence, so packing multiple documents into one window leaks state across
+  document boundaries. Both SFT configs set `packing: false`.
 
 ---
 
@@ -100,8 +130,10 @@ Defaults come from [`configs/eval.yaml`](configs/eval.yaml); CLI flags override 
 
 **Notes:**
 
-- The model id `Qwen/Qwen3.5-0.8B-Base` is unverified — swap `--model` if the
-  download fails.
+- With `--backend hf`, the eval harness loads `Qwen3.5-0.8B-Base` as a
+  multimodal checkpoint (`AutoModelForImageTextToText`) and generates from its
+  text decoder; with `--backend vllm`, vLLM must support the `qwen3_5`
+  architecture (else fall back to `hf`).
 - Do not change `configs/eval.yaml` between phases; a fair Base/SFT/GRPO
   comparison depends on an identical eval config.
 
@@ -110,14 +142,25 @@ Defaults come from [`configs/eval.yaml`](configs/eval.yaml); CLI flags override 
 ## Phase 2 — Code SFT
 
 Teaches the base model to follow code instructions, using
-`ise-uiuc/Magicoder-OSS-Instruct-75K` converted to chat format. Built on TRL's
-`SFTTrainer`. Two configs: **full** fine-tuning (primary) and **LoRA** (fallback).
+`ise-uiuc/Magicoder-OSS-Instruct-75K` converted to chat format. Built on the
+Hugging Face `Trainer` (not TRL's `SFTTrainer`) so we fully control loading and
+tokenization for the multimodal hybrid model (see
+[Model architecture](#model-architecture-read-before-changing-model-code)). Two
+configs: **full** fine-tuning (primary) and **LoRA** (fallback).
 
-**Tuning for the RTX 5090 (32GB).** A 0.8B model leaves plenty of VRAM, so the
-config pushes throughput: bf16, sequence **packing** to fill 4096-token windows,
-Flash-Attention-2 (auto-falls back to SDPA), fused AdamW, TF32, and an effective
-batch of 32 (`16 x 2`). If `nvidia-smi` shows spare memory mid-run, raise
-`per_device_train_batch_size`.
+**What the script does.** Loads `Qwen3_5ForConditionalGeneration` via
+`AutoModelForImageTextToText`, **freezes** the vision tower (`model.visual.*`)
+and the MTP head (`mtp.*`), and fine-tunes the text decoder only. Data is
+tokenized with the chat template and **completion-only loss** (`mask_prompt:
+true` — the user/prompt tokens are set to `-100`, so loss is computed over the
+assistant response). **Packing is disabled** (DeltaNet recurrent state).
+
+**Tuning for the RTX 5090 (32GB).** A 0.8B model leaves plenty of VRAM: bf16,
+Flash-Attention-2 on the full-attention layers (auto-falls back to SDPA), fused
+AdamW, TF32, `group_by_length` to cut padding waste, and an effective batch of 32
+(`8 x 4`). With packing off each example is a full padded sequence, so the
+per-device batch starts conservative — if `nvidia-smi` shows spare memory
+mid-run, raise `per_device_train_batch_size`.
 
 **1. Prepare data:**
 
@@ -145,9 +188,12 @@ template — ready for Phase 3 eval with `--mode chat`).
 python scripts/train_sft.py --config configs/sft_full.yaml --limit 100 --max-steps 5
 ```
 
-**LoRA fallback:** `--config configs/sft_lora.yaml`. This saves an adapter to
-`outputs/qwen35_0_8b_code_sft_lora/`; merge it into the base model before running
-Phase 3 eval.
+**LoRA fallback:** `--config configs/sft_lora.yaml`. With `target_modules: auto`
+the script discovers every `nn.Linear` under `model.language_model.*` (DeltaNet
+`in_proj_*`/`out_proj`, attention `q/k/v/o_proj`, MLP `gate/up/down_proj`) and
+scopes the adapters there, so the frozen vision tower is never touched. This
+saves an adapter to `outputs/qwen35_0_8b_code_sft_lora/`; merge it into the base
+model before running Phase 3 eval.
 
 **Notes:**
 

@@ -4,21 +4,32 @@
 # server, then the rest of these, e.g.:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu128
 torch>=2.7.0
-transformers>=4.49.0
+# Qwen3.5 (model_type qwen3_5 / Qwen3_5ForConditionalGeneration) landed in
+# transformers 4.57; the 0.8B-Base config is stamped 4.57.0.dev0.
+transformers>=4.57.0
 accelerate>=1.2.0
 datasets>=3.2.0
 pyyaml>=6.0
 
 # Fast generation for eval (optional but recommended). Use --backend hf to skip.
+# NOTE: vLLM must support the qwen3_5 architecture; if it doesn't on this
+# Blackwell box yet, run eval with --backend hf.
 vllm>=0.7.0
 
-# SFT / GRPO training
+# SFT / GRPO training. (train_sft.py uses the HF Trainer directly; trl is kept
+# for the GRPO phase.)
 trl>=0.12.0
 peft>=0.13.0
 
-# Optional: faster + lower-memory attention for training. If it won't build on
-# Blackwell, the train script auto-falls back to PyTorch SDPA.
+# Optional: faster + lower-memory attention for the full_attention layers. If it
+# won't build on Blackwell, the scripts auto-fall back to PyTorch SDPA.
 # flash-attn>=2.7.0
+
+# Optional: fast kernels for the Gated DeltaNet (linear_attention) layers.
+# Without them Qwen3.5 still runs via a slower, more memory-hungry pure-PyTorch
+# path. Recommended on the RTX 5090 for throughput.
+# causal-conv1d>=1.4.0
+# flash-linear-attention   # imports as `fla`
 
 # Code benchmarks: HumanEval+ / MBPP+
 evalplus>=0.3.1

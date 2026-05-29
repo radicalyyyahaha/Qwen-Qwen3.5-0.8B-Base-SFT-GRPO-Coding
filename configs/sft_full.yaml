@@ -1,5 +1,9 @@
-# Full SFT — primary config, tuned to push a single RTX 5090 (32GB).
-# A 0.8B model fits full fine-tuning here with lots of room, so we max batch.
+# Full SFT — primary config for Qwen3.5-0.8B-Base on a single RTX 5090 (32GB).
+#
+# Qwen3.5-0.8B-Base is a multimodal hybrid checkpoint
+# (Qwen3_5ForConditionalGeneration). train_sft.py loads the full model, freezes
+# the vision tower (model.visual.*) and the MTP head (mtp.*), and fine-tunes the
+# text decoder (model.language_model.*) only.
 model: Qwen/Qwen3.5-0.8B-Base
 train_file: data/sft/magicoder_chat.jsonl
 output_dir: outputs/qwen35_0_8b_code_sft
@@ -7,13 +11,29 @@ output_dir: outputs/qwen35_0_8b_code_sft
 training_type: full           # full | lora
 precision: bf16
 seq_len: 4096
-packing: true                 # pack short samples to fill 4096 -> high GPU util
-attn_implementation: flash_attention_2   # auto-falls back to sdpa if unavailable
 
-# Throughput. Effective batch = 16 * 2 = 32 tokens-sequences of 4096.
-# If `nvidia-smi` shows spare VRAM mid-run, raise per_device_train_batch_size.
-per_device_train_batch_size: 16
-gradient_accumulation_steps: 2
+# Packing is intentionally OFF: the 3:1 Gated DeltaNet layers carry a recurrent
+# state along the sequence, so packing multiple documents into one window would
+# leak state across document boundaries. One example == one (padded) sequence.
+packing: false
+mask_prompt: true             # completion-only loss (mask user/prompt tokens)
+group_by_length: true         # batch similar-length samples to cut padding waste
+
+# Freeze the non-text components for text-only code SFT.
+freeze_vision: true
+freeze_mtp: true
+
+# Applies to the full_attention layers. Auto-falls back to sdpa if flash-attn is
+# not installed. The DeltaNet (linear_attention) layers use causal-conv1d + fla
+# kernels when available, otherwise a slower pure-PyTorch path (see requirements).
+attn_implementation: flash_attention_2
+
+# Throughput. Effective batch = 8 * 4 = 32. With packing OFF each example is a
+# full (padded) sequence, so this is a safe starting point; if `nvidia-smi` shows
+# spare VRAM mid-run, raise per_device_train_batch_size (16, 24, ...) to push the
+# 5090 harder.
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 4
 gradient_checkpointing: true
 
 learning_rate: 2.0e-5

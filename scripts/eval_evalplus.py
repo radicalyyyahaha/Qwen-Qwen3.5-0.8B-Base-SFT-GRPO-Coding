@@ -31,7 +31,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from src.utils import extract_code, load_yaml, now_iso, write_jsonl  # noqa: E402
+from src.utils import (  # noqa: E402
+    extract_code,
+    load_lm,
+    load_yaml,
+    now_iso,
+    write_jsonl,
+)
 
 # Stop sequences for base-model completion: cut the model off once it starts a
 # new top-level definition / example, so it doesn't ramble into the next task.
@@ -128,18 +134,18 @@ def make_generator(args):
         return gen
 
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoTokenizer
 
     tok = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        torch_dtype=torch.bfloat16,
-        device_map="cuda",
-        trust_remote_code=True,
-    )
+    # load_lm picks AutoModelForCausalLM for dense models and
+    # AutoModelForImageTextToText for multimodal checkpoints (e.g. Qwen3.5);
+    # text-only generation uses the language decoder either way.
+    model, is_mm = load_lm(args.model, dtype=torch.bfloat16, device_map="cuda")
+    if is_mm:
+        print("[hf] multimodal checkpoint; generating from its text decoder")
     model.eval()
 
     def gen(prompts, stop):
