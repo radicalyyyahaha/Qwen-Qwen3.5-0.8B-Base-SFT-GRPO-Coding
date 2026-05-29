@@ -47,6 +47,17 @@ pip install -r requirements.txt
 If vLLM is hard to install on this GPU, every script supports `--backend hf`
 (plain `transformers`) as a fallback.
 
+### Troubleshooting (Blackwell / RTX 5090)
+
+- **`RuntimeError: FlashInfer requires GPUs with sm75 or higher`** — vLLM picked
+  the FlashInfer attention backend, but the installed FlashInfer has no sm_120
+  kernels (the message is misleading; the 5090 is fine). Fixes, in order:
+  1. Force a different backend: add `--attention-backend FLASH_ATTN` (or set
+     `attention_backend: FLASH_ATTN` in `configs/eval.yaml`).
+  2. If that also fails, run with `--backend hf` to unblock immediately.
+  3. For a permanent fix, upgrade to a Blackwell-ready vLLM + FlashInfer built
+     against CUDA 12.8.
+
 ---
 
 ## Phase 1 — Base evaluation

@@ -12,3 +12,6 @@ n_samples: 1             # pass@1
 max_model_len: 4096
 gpu_memory_utilization: 0.90
 tensor_parallel_size: 1
+# Blackwell / RTX 5090: if vLLM errors with "FlashInfer requires GPUs with sm75
+# or higher", uncomment to force a backend with sm_120 kernels.
+# attention_backend: FLASH_ATTN

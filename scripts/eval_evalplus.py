@@ -51,6 +51,7 @@ DEFAULTS = {
     "max_model_len": 4096,
     "gpu_memory_utilization": 0.90,
     "tensor_parallel_size": 1,
+    "attention_backend": "",
 }
 
 
@@ -97,6 +98,11 @@ def try_sanitize(sanitizer, code, entry_point):
 def make_generator(args):
     """Load the backend once and return a `gen(prompts, stop) -> list[str]`."""
     if args.backend == "vllm":
+        # Must be set before importing vllm. On Blackwell/RTX 5090 the default
+        # FlashInfer backend may lack sm_120 kernels; FLASH_ATTN avoids that.
+        if args.attention_backend:
+            os.environ["VLLM_ATTENTION_BACKEND"] = args.attention_backend
+            print(f"[vllm] VLLM_ATTENTION_BACKEND={args.attention_backend}")
         from vllm import LLM, SamplingParams
 
         llm = LLM(
@@ -234,6 +240,12 @@ def parse_args():
     )
     p.add_argument(
         "--tensor-parallel-size", type=int, default=cfg["tensor_parallel_size"]
+    )
+    p.add_argument(
+        "--attention-backend",
+        default=cfg["attention_backend"] or None,
+        help="vLLM attention backend override (e.g. FLASH_ATTN, XFORMERS). On "
+        "Blackwell/RTX 5090, use FLASH_ATTN if the default FlashInfer fails.",
     )
     p.add_argument("--batch-size", type=int, default=16, help="hf backend only")
     p.add_argument("--limit", type=int, default=0, help="debug: first N tasks only")
