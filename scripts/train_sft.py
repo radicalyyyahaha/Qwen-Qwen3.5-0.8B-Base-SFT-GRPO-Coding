@@ -67,23 +67,24 @@ def make_tokenize_fn(tokenizer, seq_len, mask_prompt):
     so loss is computed only over the assistant's response (completion-only).
     """
 
+    def render_and_tokenize(messages, add_generation_prompt):
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=add_generation_prompt,
+            enable_thinking=False,
+        )
+        return tokenizer(text, add_special_tokens=False)["input_ids"]
+
     def _tok(example):
         messages = example["messages"]
         # enable_thinking=False: Magicoder has no reasoning traces, so train the
         # plain (non-<think>) chat format. Unknown to non-Qwen templates -> ignored.
-        input_ids = tokenizer.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=False,
-            enable_thinking=False,
-        )
+        input_ids = render_and_tokenize(messages, add_generation_prompt=False)
         labels = list(input_ids)
         if mask_prompt and len(messages) >= 2:
-            prompt_ids = tokenizer.apply_chat_template(
-                messages[:-1],
-                tokenize=True,
-                add_generation_prompt=True,
-                enable_thinking=False,
+            prompt_ids = render_and_tokenize(
+                messages[:-1], add_generation_prompt=True
             )
             # Mask the longest shared prefix (prompt + any chat scaffolding) and
             # learn from the first token that differs (the assistant response).

@@ -205,11 +205,15 @@ model before running Phase 3 eval.
 
 ## Results
 
-| Model | HumanEval+ pass@1 | MBPP+ pass@1 | Notes |
-|---|---:|---:|---|
-| Base | TBD | TBD | Qwen3.5-0.8B-Base |
-| SFT | TBD | TBD | Magicoder SFT |
-| SFT + GRPO | TBD | TBD | TACO RLVR |
+Greedy **pass@1** from `scripts/eval_evalplus.py` (EvalPlus). `HumanEval` / `MBPP`
+are the original tests; `HumanEval+` / `MBPP+` add EvalPlus's extra tests (the
+headline metric for the Base < SFT < SFT+GRPO comparison).
+
+| Model | HumanEval | HumanEval+ | MBPP | MBPP+ | Notes |
+|---|---:|---:|---:|---:|---|
+| Base | 0.1950 | 0.1830 | 0.3040 | 0.2490 | Qwen3.5-0.8B-Base |
+| SFT | TBD | TBD | TBD | TBD | Magicoder SFT |
+| SFT + GRPO | TBD | TBD | TBD | TBD | TACO RLVR |
 
 ## References
 
