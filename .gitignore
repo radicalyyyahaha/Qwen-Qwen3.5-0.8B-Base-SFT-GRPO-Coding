@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.DS_Store
+
+# Run artifacts
+results/
+outputs/
+wandb/
+
+# Model / dataset caches
+.cache/

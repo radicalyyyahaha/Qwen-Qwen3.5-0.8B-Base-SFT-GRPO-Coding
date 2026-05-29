@@ -1,0 +1,16 @@
+# Core training / inference stack.
+# NOTE: RTX 5090 is Blackwell (sm_120). It needs a CUDA 12.8+ build of torch
+# (>=2.7) and a matching vLLM build. Install torch from the cu128 index on the
+# server, then the rest of these, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+torch>=2.7.0
+transformers>=4.49.0
+accelerate>=1.2.0
+datasets>=3.2.0
+pyyaml>=6.0
+
+# Fast generation for eval (optional but recommended). Use --backend hf to skip.
+vllm>=0.7.0
+
+# Code benchmarks: HumanEval+ / MBPP+
+evalplus>=0.3.1

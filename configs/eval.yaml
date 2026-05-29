@@ -1,0 +1,14 @@
+# Fixed evaluation config.
+# Key rule: keep these identical across Base / SFT / GRPO eval so the
+# Base < SFT < SFT+GRPO comparison is fair. CLI flags override these.
+
+backend: vllm            # vllm | hf
+temperature: 0.0         # greedy decoding for pass@1
+top_p: 1.0
+max_new_tokens: 512
+n_samples: 1             # pass@1
+
+# vLLM engine settings (single RTX 5090 32GB)
+max_model_len: 4096
+gpu_memory_utilization: 0.90
+tensor_parallel_size: 1
