@@ -13,7 +13,7 @@ single **RTX 5090 (32GB)**. Full design spec lives in [`code_rlvr_plan.md`](code
 
 - [x] **Phase 1 — Base evaluation** (HumanEval+ / MBPP+)
 - [x] **Phase 2 — Code SFT** (`ise-uiuc/Magicoder-OSS-Instruct-75K`)
-- [ ] Phase 3 — SFT evaluation
+- [x] **Phase 3 — SFT evaluation** (improves over Base on all four metrics)
 - [ ] Phase 4 — GRPO / RLVR (`BAAI/TACO`, test-based reward)
 - [ ] Phase 5 — Final evaluation
 
@@ -267,7 +267,7 @@ headline metric for the Base < SFT < SFT+GRPO comparison).
 | Model | HumanEval | HumanEval+ | MBPP | MBPP+ | Notes |
 |---|---:|---:|---:|---:|---|
 | Base | 0.1950 | 0.1830 | 0.3040 | 0.2490 | Qwen3.5-0.8B-Base |
-| SFT | TBD | TBD | TBD | TBD | Magicoder SFT |
+| SFT | 0.2800 | 0.2620 | 0.3440 | 0.2860 | Magicoder SFT (20k, 3 ep) |
 | SFT + GRPO | TBD | TBD | TBD | TBD | TACO RLVR |
 
 ## References

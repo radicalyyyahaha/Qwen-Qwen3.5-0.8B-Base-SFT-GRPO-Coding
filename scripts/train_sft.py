@@ -513,6 +513,27 @@ def main():
     tokenizer.save_pretrained(output_dir)
     print(f"[done] saved model + tokenizer -> {output_dir}")
 
+    # Qwen3.5 is multimodal: downstream loaders (notably vLLM's AutoProcessor)
+    # expect the image/video preprocessor configs (preprocessor_config.json) in
+    # the checkpoint dir. The tokenizer alone isn't enough, so copy the base
+    # model's processor over. Best-effort: the model is already saved, so a
+    # failure here is non-fatal (fall back to `--backend hf` or copy it later).
+    if is_mm:
+        try:
+            from transformers import AutoProcessor
+
+            processor = AutoProcessor.from_pretrained(
+                cfg["model"], trust_remote_code=True
+            )
+            processor.save_pretrained(output_dir)
+            print(f"[done] saved processor -> {output_dir}")
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[warn] could not save processor ({type(exc).__name__}: {exc}). "
+                "For vLLM eval, copy preprocessor_config.json from the base model "
+                "into the output dir, or evaluate with --backend hf."
+            )
+
 
 if __name__ == "__main__":
     main()
