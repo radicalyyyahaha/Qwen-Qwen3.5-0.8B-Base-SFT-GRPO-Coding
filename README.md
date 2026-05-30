@@ -14,7 +14,7 @@ single **RTX 5090 (32GB)**. Full design spec lives in [`code_rlvr_plan.md`](code
 - [x] **Phase 1 — Base evaluation** (HumanEval+ / MBPP+)
 - [x] **Phase 2 — Code SFT** (`ise-uiuc/Magicoder-OSS-Instruct-75K`)
 - [x] **Phase 3 — SFT evaluation** (improves over Base on all four metrics)
-- [ ] Phase 4 — GRPO / RLVR (`BAAI/TACO`, test-based reward)
+- [ ] Phase 4 — GRPO / RLVR (`BAAI/TACO`, test-based reward) — *code ready, not yet run*
 - [ ] Phase 5 — Final evaluation
 
 ## Layout
@@ -24,12 +24,17 @@ configs/
   eval.yaml              # fixed eval config (keep identical across phases)
   sft_full.yaml          # full SFT (primary, maxed for RTX 5090 32GB)
   sft_lora.yaml          # LoRA SFT (fallback)
+  grpo.yaml              # GRPO / RLVR (Phase 4, tuned for A100 40GB)
 scripts/
   eval_evalplus.py       # HumanEval+/MBPP+ harness (Phase 1/3/5)
   prepare_sft_data.py    # Magicoder -> chat-format jsonl (Phase 2)
   train_sft.py           # HF Trainer code SFT (Phase 2)
+  prepare_grpo_data.py   # TACO -> {prompt, tests} jsonl (Phase 4)
+  train_grpo.py          # TRL GRPOTrainer, test-based reward (Phase 4)
 src/
-  utils.py               # shared helpers
+  utils.py               # shared helpers (model loader, code extraction)
+  reward.py              # GRPO reward: run tests, reward = pass rate (Phase 4)
+  sandbox.py             # sandboxed execution of generated code (Phase 4)
 data/                    # prepared datasets (gitignored)
 requirements.txt
 code_rlvr_plan.md        # full plan / spec
@@ -255,6 +260,72 @@ to clear is the Base row (HumanEval+ `0.1830`, MBPP+ `0.2490`).
   at the merged dir.
 - Keep `configs/eval.yaml` unchanged from Phase 1; the fair comparison depends on
   an identical eval config.
+
+---
+
+## Phase 4 — GRPO / RLVR
+
+Optimizes the **SFT checkpoint** with GRPO and a *verifiable* reward: each
+generated program is run against TACO unit tests and rewarded by the fraction of
+tests it passes. No reward model — the tests *are* the reward.
+
+**Pieces:**
+
+- `scripts/prepare_grpo_data.py` — `BAAI/TACO` → `{prompt, tests}` jsonl.
+- `src/sandbox.py` — runs untrusted, model-generated Python in a subprocess with
+  OS resource limits + a reliability guard (handles stdin/stdout and call-based
+  tests).
+- `src/reward.py` — TRL reward function: extract code, run tests, reward = pass
+  rate (threaded across the batch).
+- `scripts/train_grpo.py` — TRL `GRPOTrainer`, same multimodal handling as SFT
+  (load via `AutoModelForImageTextToText`, freeze vision/MTP, or LoRA on the text
+  decoder).
+
+**1. Prepare data:**
+
+```bash
+python scripts/prepare_grpo_data.py --limit 3000 --difficulty EASY \
+  --output data/grpo/taco_grpo.jsonl
+```
+
+Defaults to EASY, stdin/stdout-only problems so the 0.8B model passes enough
+tests to get a usable reward signal. `--difficulty all` / `--include-fn-name`
+widen the pool; `--streaming` avoids downloading all of TACO (it's large — set
+`HF_ENDPOINT` too if downloads are slow).
+
+**2. Train (from the SFT checkpoint):**
+
+```bash
+python scripts/train_grpo.py --config configs/grpo.yaml
+```
+
+Output: `outputs/qwen35_0_8b_code_grpo/`. Score it just like Phase 3 (`--mode
+chat`) and fill the **SFT + GRPO** row of [Results](#results).
+
+**Debug run** (end-to-end in a couple of minutes):
+
+```bash
+python scripts/train_grpo.py --config configs/grpo.yaml --limit 32 --max-steps 3
+```
+
+**Logging.** Training writes `training_log.jsonl` (full metric history) to the
+output dir plus live curve plots — `reward_curve.svg` (**the one to watch**),
+`loss_curve.svg`, `kl_curve.svg`, `reward_std_curve.svg` (`.png` too if
+matplotlib is installed). If mean reward stays flat near 0, the tasks are too
+hard and there's no learning signal — make the data easier (see Phase 4 data
+notes). GRPO loss is often near-zero and uninformative; judge progress by reward.
+
+**Tuning for the A100 (40GB).** bf16, gradient checkpointing, fused AdamW. The
+memory/speed driver is generation — `num_generations` (8) ×
+`max_completion_length` (1024). If you OOM, lower those first, or set
+`training_type: lora` (which also drops the KL reference-model copy). Generation
+uses HF `generate` (`use_vllm: false`) because vLLM's engine init has been
+unreliable for this `qwen3_5` hybrid, so rollouts are the throughput bottleneck.
+
+> **Security:** `src/sandbox.py` executes model-written code. It uses a
+> subprocess + OS resource limits + a reliability guard, but that is **not** a
+> hard sandbox (no network/namespace isolation). Run GRPO only on a disposable
+> box.
 
 ---
 

@@ -1,0 +1,70 @@
+# GRPO / RLVR — Phase 4. Starts from the Phase-2 SFT checkpoint and optimizes it
+# with a verifiable, test-based reward (generated programs are run against TACO
+# unit tests; reward = fraction of tests passed). Tuned for a single A100-40GB.
+#
+# Memory notes (A100-40GB, 0.8B model):
+#   - Full FT keeps a frozen reference-model copy for the KL term (beta>0). For a
+#     0.8B model that fits; switch training_type to `lora` if you OOM (LoRA also
+#     drops the separate ref model -> a big memory win).
+#   - The cost driver is generation: num_generations completions per prompt, each
+#     up to max_completion_length tokens. Lower those two first if you OOM.
+model: outputs/qwen35_0_8b_code_sft        # the SFT checkpoint (NOT the base model)
+train_file: data/grpo/taco_grpo.jsonl
+output_dir: outputs/qwen35_0_8b_code_grpo
+
+training_type: full            # full | lora   (lora is lighter on 40GB)
+precision: bf16
+attn_implementation: flash_attention_2     # A100 has flash-attn; falls back to sdpa
+
+# Freeze non-text components (full FT only; LoRA already scopes to the decoder).
+freeze_vision: true
+freeze_mtp: true
+
+# --- GRPO sampling ---
+num_generations: 8             # group size G (completions per prompt)
+max_prompt_length: 1024        # TACO statements are long; left-truncated if over
+max_completion_length: 1024
+temperature: 1.0               # exploration; GRPO needs diverse samples
+beta: 0.04                     # KL-to-reference coefficient (0 drops the ref model)
+
+# --- batch / optimizer ---
+# per_device_train_batch_size counts *completions* and must be a multiple of
+# num_generations. 8 = one prompt's full group per micro-step; grad-accum 4 ->
+# 4 prompts per optimizer step. Lower if you OOM.
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 4
+gradient_checkpointing: true
+learning_rate: 1.0e-6          # RL fine-tuning uses a much smaller LR than SFT
+num_train_epochs: 1
+max_steps: 500                 # cap for a demo run (0 = use num_train_epochs)
+lr_scheduler_type: constant_with_warmup
+warmup_ratio: 0.03
+weight_decay: 0.0
+max_grad_norm: 1.0
+optim: adamw_torch_fused
+tf32: true
+
+# Generation backend. vLLM is faster but its engine-core init has been flaky for
+# this qwen3_5 hybrid; HF generate is the reliable default. Set true to try vLLM.
+use_vllm: false
+
+# --- reward / sandbox (src/reward.py + src/sandbox.py) ---
+reward_timeout: 6.0            # seconds per test-case execution
+reward_mem_mb: 1024            # per-process memory cap (MB)
+reward_max_cases: 15           # cap test cases run per problem (speed)
+reward_num_workers: 8          # threads scoring one batch in parallel
+
+logging_steps: 1
+save_strategy: steps
+save_steps: 100
+save_total_limit: 2
+dataloader_num_workers: 2
+report_to: none
+seed: 42
+
+# LoRA (only used when training_type: lora)
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+language_model_scope: model.language_model
+target_modules: auto
