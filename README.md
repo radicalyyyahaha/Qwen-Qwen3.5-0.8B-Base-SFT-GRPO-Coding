@@ -215,6 +215,49 @@ model before running Phase 3 eval.
 
 ---
 
+## Phase 3 — SFT evaluation
+
+Scores the SFT checkpoint on the **same** benchmarks with the **same**
+`configs/eval.yaml` as Phase 1, so Base vs SFT is apples-to-apples — the only
+differences are the model and `--mode chat` (apply the chat template instead of
+raw completion).
+
+**Run:**
+
+```bash
+python scripts/eval_evalplus.py \
+  --model outputs/qwen35_0_8b_code_sft \
+  --mode chat --dataset both \
+  --output results/sft_eval.json
+```
+
+`--mode chat` builds each prompt from the tokenizer chat template with
+`enable_thinking=False` — exactly how `train_sft.py` formatted the SFT data, so
+the model sees the prompt format it was trained on. The solution is extracted
+from the assistant's ```python block (EvalPlus sanitizer as fallback).
+
+**Outputs:**
+
+- `results/sft_eval.json` — base/plus pass@1 per dataset.
+- `results/samples/sft_eval_<dataset>.jsonl` — generated solutions.
+
+Then copy the four numbers into the **SFT** row of [Results](#results); the bar
+to clear is the Base row (HumanEval+ `0.1830`, MBPP+ `0.2490`).
+
+**Notes:**
+
+- The SFT output dir is a full `qwen3_5` checkpoint (text decoder fine-tuned,
+  vision/MTP frozen) bundled with the tokenizer + chat template, so both
+  `--backend vllm` and `--backend hf` load it directly. The hf path re-enables
+  `use_cache` (training turns it off for gradient checkpointing).
+- **LoRA checkpoints** (`outputs/qwen35_0_8b_code_sft_lora/`) are adapters, not a
+  full model — merge the adapter into the base model first, then point `--model`
+  at the merged dir.
+- Keep `configs/eval.yaml` unchanged from Phase 1; the fair comparison depends on
+  an identical eval config.
+
+---
+
 ## Results
 
 Greedy **pass@1** from `scripts/eval_evalplus.py` (EvalPlus). `HumanEval` / `MBPP`

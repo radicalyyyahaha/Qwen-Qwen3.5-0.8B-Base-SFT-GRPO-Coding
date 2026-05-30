@@ -32,8 +32,8 @@ attn_implementation: flash_attention_2
 # full (padded) sequence, so this is a safe starting point; if `nvidia-smi` shows
 # spare VRAM mid-run, raise per_device_train_batch_size (16, 24, ...) to push the
 # 5090 harder.
-per_device_train_batch_size: 8
-gradient_accumulation_steps: 4
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 8
 gradient_checkpointing: true
 
 learning_rate: 2.0e-5

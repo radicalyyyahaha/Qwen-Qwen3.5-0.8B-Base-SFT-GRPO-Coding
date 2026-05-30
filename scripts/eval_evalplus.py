@@ -76,8 +76,10 @@ def load_problems(dataset):
 def build_chat_prompt(problem, tokenizer):
     user = CHAT_INSTRUCTION + "```python\n" + problem["prompt"].rstrip() + "\n```"
     messages = [{"role": "user", "content": user}]
+    # enable_thinking=False matches how train_sft.py renders the chat template,
+    # so the SFT model is evaluated on the exact prompt format it was trained on.
     return tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
     )
 
 
@@ -146,6 +148,10 @@ def make_generator(args):
     model, is_mm = load_lm(args.model, dtype=torch.bfloat16, device_map="cuda")
     if is_mm:
         print("[hf] multimodal checkpoint; generating from its text decoder")
+    # SFT checkpoints are saved with use_cache=False (training enables gradient
+    # checkpointing); re-enable it so generation uses the KV cache instead of
+    # recomputing the whole context each step.
+    model.config.use_cache = True
     model.eval()
 
     def gen(prompts, stop):
