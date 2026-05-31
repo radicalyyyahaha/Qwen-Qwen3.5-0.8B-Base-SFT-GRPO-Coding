@@ -15,7 +15,7 @@ single **RTX 5090 (32GB)**. Full design spec lives in [`code_rlvr_plan.md`](code
 - [x] **Phase 2 — Code SFT** (`ise-uiuc/Magicoder-OSS-Instruct-75K`)
 - [x] **Phase 3 — SFT evaluation** (improves over Base on all four metrics)
 - [x] **Phase 4 — GRPO / RLVR** (`BAAI/TACO`, test-based reward, LoRA)
-- [ ] Phase 5 — Final evaluation — *eval ready; run it to fill the Results row*
+- [x] **Phase 5 — Final evaluation**
 
 ## Layout
 
@@ -370,7 +370,17 @@ headline metric for the Base < SFT < SFT+GRPO comparison).
 |---|---:|---:|---:|---:|---|
 | Base | 0.1950 | 0.1830 | 0.3040 | 0.2490 | Qwen3.5-0.8B-Base |
 | SFT | 0.2800 | 0.2620 | 0.3440 | 0.2860 | Magicoder SFT (20k, 3 ep) |
-| SFT + GRPO | TBD | TBD | TBD | TBD | TACO RLVR |
+| SFT + GRPO | 0.2740 | 0.2620 | 0.3390 | 0.2780 | TACO RLVR (LoRA) — ≈ SFT |
+
+**Base < SFT is confirmed; SFT → GRPO came out ≈ flat (slightly lower).** Two
+likely causes: (1) **weak reward signal** — TACO competitive-programming problems
+are hard for a 0.8B model, so most rollouts fail every test and the gradient is
+near-zero (check `reward_curve.svg`); and (2) **train/eval mismatch** — GRPO
+optimized TACO *stdin/stdout* programs, but HumanEval/MBPP are *function-completion*
+tasks, so the behavior doesn't transfer (and can nudge the model toward
+`input()`-style code that fails here). The fix is to run RLVR on eval-aligned data
+(function + assert tests) with a genuinely non-zero reward; the **Base → SFT** gain
+is the solid result.
 
 ## References
 
