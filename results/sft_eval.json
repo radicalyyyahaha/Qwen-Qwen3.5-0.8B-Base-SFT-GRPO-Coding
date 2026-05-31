@@ -1,0 +1,30 @@
+{
+  "model": "outputs/qwen35_0_8b_code_sft",
+  "mode": "chat",
+  "backend": "hf",
+  "timestamp": "2026-05-30T06:46:57.993336+00:00",
+  "config": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_new_tokens": 512,
+    "sanitize": true
+  },
+  "results": {
+    "humaneval": {
+      "base_pass@1": 0.28,
+      "plus_pass@1": 0.262,
+      "n_generated": 164,
+      "n_total": 164,
+      "partial": false,
+      "samples": "results/samples/sft_eval_humaneval.jsonl"
+    },
+    "mbpp": {
+      "base_pass@1": 0.344,
+      "plus_pass@1": 0.286,
+      "n_generated": 378,
+      "n_total": 378,
+      "partial": false,
+      "samples": "results/samples/sft_eval_mbpp.jsonl"
+    }
+  }
+}

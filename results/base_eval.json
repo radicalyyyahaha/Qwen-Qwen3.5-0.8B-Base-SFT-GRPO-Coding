@@ -1,0 +1,30 @@
+{
+  "model": "Qwen/Qwen3.5-0.8B-Base",
+  "mode": "base",
+  "backend": "vllm",
+  "timestamp": "2026-05-29T23:04:18.421949+00:00",
+  "config": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "max_new_tokens": 512,
+    "sanitize": true
+  },
+  "results": {
+    "humaneval": {
+      "base_pass@1": 0.195,
+      "plus_pass@1": 0.183,
+      "n_generated": 164,
+      "n_total": 164,
+      "partial": false,
+      "samples": "results/samples/base_eval_humaneval.jsonl"
+    },
+    "mbpp": {
+      "base_pass@1": 0.304,
+      "plus_pass@1": 0.249,
+      "n_generated": 378,
+      "n_total": 378,
+      "partial": false,
+      "samples": "results/samples/base_eval_mbpp.jsonl"
+    }
+  }
+}
