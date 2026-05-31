@@ -14,8 +14,8 @@ single **RTX 5090 (32GB)**. Full design spec lives in [`code_rlvr_plan.md`](code
 - [x] **Phase 1 — Base evaluation** (HumanEval+ / MBPP+)
 - [x] **Phase 2 — Code SFT** (`ise-uiuc/Magicoder-OSS-Instruct-75K`)
 - [x] **Phase 3 — SFT evaluation** (improves over Base on all four metrics)
-- [ ] Phase 4 — GRPO / RLVR (`BAAI/TACO`, test-based reward) — *code ready, not yet run*
-- [ ] Phase 5 — Final evaluation
+- [x] **Phase 4 — GRPO / RLVR** (`BAAI/TACO`, test-based reward, LoRA)
+- [ ] Phase 5 — Final evaluation — *eval ready; run it to fill the Results row*
 
 ## Layout
 
@@ -291,7 +291,9 @@ python scripts/prepare_grpo_data.py --limit 3000 --difficulty EASY \
 Defaults to EASY, stdin/stdout-only problems so the 0.8B model passes enough
 tests to get a usable reward signal. `--difficulty all` / `--include-fn-name`
 widen the pool; `--streaming` avoids downloading all of TACO (it's large — set
-`HF_ENDPOINT` too if downloads are slow).
+`HF_ENDPOINT` too if downloads are slow). If your system disk is small, send the
+download cache to a big disk: `--cache-dir ./hf_cache` (or `export HF_HOME=...`),
+else TACO fills `~/.cache/huggingface`.
 
 > **TACO needs `datasets<4.0`.** It ships a loading script (`TACO.py`), and
 > `datasets>=4.0` removed script support (*"Dataset scripts are no longer
@@ -330,6 +332,31 @@ unreliable for this `qwen3_5` hybrid, so rollouts are the throughput bottleneck.
 > subprocess + OS resource limits + a reliability guard, but that is **not** a
 > hard sandbox (no network/namespace isolation). Run GRPO only on a disposable
 > box.
+
+---
+
+## Phase 5 — Final evaluation
+
+Scores the GRPO model on the **same** benchmarks / `configs/eval.yaml` as Phases
+1 and 3, so Base vs SFT vs SFT+GRPO is apples-to-apples.
+
+```bash
+python scripts/eval_evalplus.py \
+  --model outputs/qwen35_0_8b_code_grpo \
+  --mode chat --dataset both \
+  --backend hf \
+  --output results/grpo_eval.json
+```
+
+The GRPO run is a **LoRA adapter** on top of the SFT checkpoint, so the eval
+auto-detects `adapter_config.json`, loads the base (SFT) model named in it, and
+merges the adapter before scoring — no manual merge step. (A full-FT GRPO
+checkpoint just loads directly.) Run from the **repo root** so the relative base
+path in the adapter config resolves. vLLM can't load an adapter directly here, so
+use `--backend hf` (it loads base + adapter automatically).
+
+Then copy the four numbers into the **SFT + GRPO** row of [Results](#results); the
+bar to clear is the SFT row (HumanEval+ `0.2620`, MBPP+ `0.2860`).
 
 ---
 

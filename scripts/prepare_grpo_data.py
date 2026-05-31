@@ -80,6 +80,13 @@ def parse_args():
         action="store_true",
         help="stream the dataset (only download consumed shards; good for TACO)",
     )
+    p.add_argument(
+        "--cache-dir",
+        default=None,
+        help="HF datasets download/cache dir. Point at a big disk if the system "
+        "disk is full, e.g. --cache-dir ./hf_cache (or set HF_HOME). "
+        "Default: ~/.cache/huggingface (system disk).",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--no-shuffle", action="store_true")
     return p.parse_args()
@@ -110,7 +117,10 @@ def main():
     if args.difficulty and args.difficulty.lower() != "all":
         diffs = {d.strip().upper() for d in args.difficulty.split(",") if d.strip()}
 
-    print(f"[load] {args.dataset} split={args.split} streaming={args.streaming}")
+    print(
+        f"[load] {args.dataset} split={args.split} streaming={args.streaming} "
+        f"cache_dir={args.cache_dir or '~/.cache (default)'}"
+    )
     try:
         try:
             ds = load_dataset(
@@ -118,11 +128,15 @@ def main():
                 split=args.split,
                 trust_remote_code=True,
                 streaming=args.streaming,
+                cache_dir=args.cache_dir,
             )
         except TypeError:
             # datasets>=4 dropped the trust_remote_code kwarg
             ds = load_dataset(
-                args.dataset, split=args.split, streaming=args.streaming
+                args.dataset,
+                split=args.split,
+                streaming=args.streaming,
+                cache_dir=args.cache_dir,
             )
     except (RuntimeError, ValueError) as exc:
         if "script" in str(exc).lower():

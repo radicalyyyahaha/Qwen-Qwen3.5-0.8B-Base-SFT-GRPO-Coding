@@ -2,17 +2,22 @@
 # with a verifiable, test-based reward (generated programs are run against TACO
 # unit tests; reward = fraction of tests passed). Tuned for a single A100-40GB.
 #
-# Memory notes (A100-40GB, 0.8B model):
-#   - Full FT keeps a frozen reference-model copy for the KL term (beta>0). For a
-#     0.8B model that fits; switch training_type to `lora` if you OOM (LoRA also
-#     drops the separate ref model -> a big memory win).
-#   - The cost driver is generation: num_generations completions per prompt, each
-#     up to max_completion_length tokens. Lower those two first if you OOM.
+# OOM on A100-40GB? The hidden driver is this model's HUGE vocab (~248k): the
+# logits tensor is [seq_len x 248320] — ~1-2 GB per 1024-token sequence — and GRPO
+# materializes it for the policy AND reference forwards, x num_generations. Full
+# fine-tuning ALSO keeps AdamW optimizer states (~7-10 GB) + a reference-model
+# copy, so it OOMs on 40GB even at tiny batch. Fixes, by impact:
+#   1. training_type: lora   -> drops the optimizer states AND the ref-model copy.
+#   2. shorten max_prompt_length / max_completion_length (logits scale with length).
+#   3. beta: 0               -> drops the reference model + its forward (full FT).
+#   4. export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True  (fights fragmentation).
+#   5. lower num_generations.
+# The defaults below are a 40GB-safe LoRA profile.
 model: outputs/qwen35_0_8b_code_sft        # the SFT checkpoint (NOT the base model)
 train_file: data/grpo/taco_grpo.jsonl
 output_dir: outputs/qwen35_0_8b_code_grpo
 
-training_type: full            # full | lora   (lora is lighter on 40GB)
+training_type: lora            # full | lora  (lora is the 40GB-safe default; see OOM notes above)
 precision: bf16
 attn_implementation: flash_attention_2     # A100 has flash-attn; falls back to sdpa
 
@@ -22,8 +27,8 @@ freeze_mtp: true
 
 # --- GRPO sampling ---
 num_generations: 8             # group size G (completions per prompt)
-max_prompt_length: 1024        # TACO statements are long; left-truncated if over
-max_completion_length: 1024
+max_prompt_length: 768         # TACO statements are long; left-truncated if over
+max_completion_length: 640     # logits are [len x ~248k vocab] -> keep modest on 40GB
 temperature: 1.0               # exploration; GRPO needs diverse samples
 beta: 0.04                     # KL-to-reference coefficient (0 drops the ref model)
 

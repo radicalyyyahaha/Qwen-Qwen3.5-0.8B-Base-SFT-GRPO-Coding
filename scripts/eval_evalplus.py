@@ -103,9 +103,45 @@ def try_sanitize(sanitizer, code, entry_point):
         return code
 
 
+def load_eval_model(model_path, dtype, device_map):
+    """Load a model for eval, transparently handling PEFT/LoRA adapter dirs.
+
+    If `model_path` is an adapter directory (contains adapter_config.json) — e.g.
+    the GRPO-LoRA output — load the adapter's base model and merge the adapter in,
+    so it evaluates exactly like a full checkpoint. Otherwise load normally.
+    Returns ``(model, is_multimodal)``.
+    """
+    import json
+
+    adapter_cfg = os.path.join(model_path, "adapter_config.json")
+    if not os.path.exists(adapter_cfg):
+        return load_lm(model_path, dtype=dtype, device_map=device_map)
+
+    with open(adapter_cfg) as f:
+        base = json.load(f).get("base_model_name_or_path")
+    if not base:
+        raise SystemExit(
+            f"{adapter_cfg} has no base_model_name_or_path; cannot locate the base "
+            "model to attach the adapter to."
+        )
+    print(f"[hf] PEFT adapter detected in {model_path}; base={base}")
+    base_model, is_mm = load_lm(base, dtype=dtype, device_map=device_map)
+    from peft import PeftModel
+
+    model = PeftModel.from_pretrained(base_model, model_path)
+    model = model.merge_and_unload()  # fold adapter in -> plain, fast generation
+    return model, is_mm
+
+
 def make_generator(args):
     """Load the backend once and return a `gen(prompts, stop) -> list[str]`."""
     if args.backend == "vllm":
+        if os.path.exists(os.path.join(args.model, "adapter_config.json")):
+            raise SystemExit(
+                f"{args.model} is a LoRA adapter; vLLM can't load it directly here. "
+                "Merge it into the base model first, or evaluate with --backend hf "
+                "(which loads base + adapter automatically)."
+            )
         # Must be set before importing vllm. On Blackwell/RTX 5090 the default
         # FlashInfer backend may lack sm_120 kernels; FLASH_ATTN avoids that.
         if args.attention_backend:
@@ -142,10 +178,11 @@ def make_generator(args):
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
-    # load_lm picks AutoModelForCausalLM for dense models and
-    # AutoModelForImageTextToText for multimodal checkpoints (e.g. Qwen3.5);
-    # text-only generation uses the language decoder either way.
-    model, is_mm = load_lm(args.model, dtype=torch.bfloat16, device_map="cuda")
+    # load_eval_model picks the right class (AutoModelForImageTextToText for
+    # multimodal Qwen3.5, AutoModelForCausalLM for dense) and, if --model is a
+    # LoRA adapter dir (the GRPO output), loads the base + merges the adapter.
+    # Text-only generation uses the language decoder either way.
+    model, is_mm = load_eval_model(args.model, torch.bfloat16, "cuda")
     if is_mm:
         print("[hf] multimodal checkpoint; generating from its text decoder")
     # SFT checkpoints are saved with use_cache=False (training enables gradient
