@@ -293,6 +293,10 @@ tests to get a usable reward signal. `--difficulty all` / `--include-fn-name`
 widen the pool; `--streaming` avoids downloading all of TACO (it's large — set
 `HF_ENDPOINT` too if downloads are slow).
 
+> **TACO needs `datasets<4.0`.** It ships a loading script (`TACO.py`), and
+> `datasets>=4.0` removed script support (*"Dataset scripts are no longer
+> supported"*). If you hit that error, `pip install 'datasets<4.0'` and re-run.
+
 **2. Train (from the SFT checkpoint):**
 
 ```bash

@@ -110,16 +110,31 @@ def main():
     if args.difficulty and args.difficulty.lower() != "all":
         diffs = {d.strip().upper() for d in args.difficulty.split(",") if d.strip()}
 
-    print(
-        f"[load] {args.dataset} split={args.split} "
-        f"streaming={args.streaming} (trust_remote_code=True)"
-    )
-    ds = load_dataset(
-        args.dataset,
-        split=args.split,
-        trust_remote_code=True,
-        streaming=args.streaming,
-    )
+    print(f"[load] {args.dataset} split={args.split} streaming={args.streaming}")
+    try:
+        try:
+            ds = load_dataset(
+                args.dataset,
+                split=args.split,
+                trust_remote_code=True,
+                streaming=args.streaming,
+            )
+        except TypeError:
+            # datasets>=4 dropped the trust_remote_code kwarg
+            ds = load_dataset(
+                args.dataset, split=args.split, streaming=args.streaming
+            )
+    except (RuntimeError, ValueError) as exc:
+        if "script" in str(exc).lower():
+            raise SystemExit(
+                f"{exc}\n\n"
+                "TACO ships a dataset loading script (TACO.py), and datasets>=4.0 "
+                "removed script support. Fixes:\n"
+                "  (a) pip install 'datasets<4.0'   # restores script loading, "
+                "then re-run this command unchanged\n"
+                "  (b) point --dataset at a parquet / no-script copy of TACO"
+            )
+        raise
     if not args.no_shuffle:
         ds = ds.shuffle(seed=args.seed)
 
